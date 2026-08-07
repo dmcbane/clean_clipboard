@@ -27,31 +27,37 @@ $conversions = @{
 }
 
 $allowed = [System.Collections.Generic.HashSet[char]]::new(
-    [char[]]("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ()`"'-_.,/\`r`n")
+    [char[]]("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ()`"'-_.,/\`n")
 )
 
 $maxLen = 1000
 
-$raw = Get-Clipboard -Raw
-if ([string]::IsNullOrEmpty($raw)) {
-    Write-Error 'Clipboard is empty (or contains no text).'
-    exit 1
-}
-
-$sb = [System.Text.StringBuilder]::new($raw.Length)
-foreach ($ch in $raw.ToCharArray()) {
-    if ($conversions.ContainsKey($ch)) {
-        [void]$sb.Append($conversions[$ch])
-    } elseif ($allowed.Contains($ch)) {
-        [void]$sb.Append($ch)
+function Clean([string]$text) {
+    # CRLF / lone CR -> LF, matching clean_clipboard.py
+    $text = $text.Replace("`r`n", "`n").Replace("`r", "`n")
+    $sb = [System.Text.StringBuilder]::new($text.Length)
+    foreach ($ch in $text.ToCharArray()) {
+        if ($conversions.ContainsKey($ch)) {
+            [void]$sb.Append($conversions[$ch])
+        } elseif ($allowed.Contains($ch)) {
+            [void]$sb.Append($ch)
+        }
+        # else: drop
     }
-    # else: drop
+    return $sb.ToString()
 }
 
-$cleaned = $sb.ToString()
-if ($cleaned.Length -gt $maxLen) {
-    $cleaned = $cleaned.Substring(0, $maxLen)
+# Dot-sourcing (as the tests do) loads Clean without touching the clipboard.
+if ($MyInvocation.InvocationName -ne '.') {
+    $raw = Get-Clipboard -Raw
+    if ([string]::IsNullOrEmpty($raw)) {
+        Write-Error 'Clipboard is empty (or contains no text).'
+        exit 1
+    }
+    $cleaned = Clean $raw
+    if ($cleaned.Length -gt $maxLen) {
+        $cleaned = $cleaned.Substring(0, $maxLen)
+    }
+    Set-Clipboard -Value $cleaned
+    "in: $($raw.Length) chars  ->  out: $($cleaned.Length) chars"
 }
-
-Set-Clipboard -Value $cleaned
-"in: $($raw.Length) chars  ->  out: $($cleaned.Length) chars"

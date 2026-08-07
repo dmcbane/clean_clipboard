@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1 - 2026-08-07
+
+- PowerShell version now matches the Python version's newline handling:
+  CRLF / lone CR are normalized to LF (previously CRLF passed through
+  unchanged).
+- Extracted a `Clean` function with a dot-source guard so the script is
+  testable without touching the clipboard.
+- Added a PowerShell test suite (`test_clean_clipboard.ps1`) with stubbed
+  clipboard cmdlets.
+
 ## 0.2.0 - 2026-08-07
 
 - Python version now works on macOS (pbcopy/pbpaste), Linux X11 (xclip),

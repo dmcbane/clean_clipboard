@@ -9,7 +9,7 @@ import subprocess
 import sys
 from typing import NamedTuple
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 CONVERSIONS = {
     # Tab -> 2 spaces
