@@ -1,15 +1,19 @@
-"""Read clipboard, normalize/strip characters, copy first 1000 chars back."""
+"""Read clipboard, normalize/strip characters, copy first 1000 chars back.
 
+Works on Windows, macOS, and Linux (X11, Wayland, and WSL).
+"""
+
+import os
+import platform
 import subprocess
 import sys
+from typing import NamedTuple
+
+__version__ = "0.2.0"
 
 CONVERSIONS = {
     # Tab -> 2 spaces
     "\t": "  ",
-    # Line breaks -> space (newlines are not in allowlist; concatenating without
-    # a separator would fuse adjacent words)
-    "\r": " ",
-    "\n": " ",
     # Smart / typographic double quotes -> "
     "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"',
     "\u00ab": '"', "\u00bb": '"', "\u2033": '"', "\u2036": '"',
@@ -36,7 +40,7 @@ ALLOWED = set(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "abcdefghijklmnopqrstuvwxyz"
     "0123456789"
-    " ()\"'-_.,/\\"
+    " \n()\"'-_.,/\\"
 )
 
 MAX_LEN = 1000
@@ -52,20 +56,56 @@ SET_CB = (
 )
 
 
+class ClipboardBackend(NamedTuple):
+    read_cmd: list
+    write_cmd: list
+    # Get-Clipboard -Raw appends one trailing CRLF that is not clipboard data
+    strips_trailing_crlf: bool
+
+
+def _clipboard_backend() -> ClipboardBackend:
+    if sys.platform == "win32":
+        return ClipboardBackend(
+            ["powershell", "-NoProfile", "-Command", GET_CB],
+            ["powershell", "-NoProfile", "-Command", SET_CB],
+            strips_trailing_crlf=True,
+        )
+    if sys.platform == "darwin":
+        return ClipboardBackend(["pbpaste"], ["pbcopy"], False)
+    # WSL: the clipboard belongs to the Windows host, not the Linux guest
+    if "microsoft" in platform.uname().release.lower():
+        return ClipboardBackend(
+            ["powershell.exe", "-NoProfile", "-Command", GET_CB],
+            ["powershell.exe", "-NoProfile", "-Command", SET_CB],
+            strips_trailing_crlf=True,
+        )
+    # Wayland sessions also set DISPLAY (XWayland), so check Wayland first
+    if os.environ.get("WAYLAND_DISPLAY"):
+        return ClipboardBackend(["wl-paste", "-n"], ["wl-copy"], False)
+    return ClipboardBackend(
+        ["xclip", "-selection", "clipboard", "-o"],
+        ["xclip", "-selection", "clipboard"],
+        False,
+    )
+
+
 def get_clipboard() -> str:
+    backend = _clipboard_backend()
     r = subprocess.run(
-        ["powershell", "-NoProfile", "-Command", GET_CB],
+        backend.read_cmd,
         capture_output=True,
         encoding="utf-8",
         check=True,
     )
-    # Get-Clipboard -Raw appends a trailing CRLF
-    return r.stdout.rstrip("\r\n")
+    text = r.stdout
+    if backend.strips_trailing_crlf:
+        text = text.removesuffix("\r\n")
+    return text
 
 
 def set_clipboard(text: str) -> None:
     subprocess.run(
-        ["powershell", "-NoProfile", "-Command", SET_CB],
+        _clipboard_backend().write_cmd,
         input=text,
         encoding="utf-8",
         check=True,
@@ -73,12 +113,21 @@ def set_clipboard(text: str) -> None:
 
 
 def clean(text: str) -> str:
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     converted = "".join(CONVERSIONS.get(ch, ch) for ch in text)
     return "".join(ch for ch in converted if ch in ALLOWED)
 
 
 def main() -> int:
-    raw = get_clipboard()
+    try:
+        raw = get_clipboard()
+    except FileNotFoundError as e:
+        print(
+            f"Clipboard tool not found: {e.filename}. "
+            "On Linux, install xclip (X11) or wl-clipboard (Wayland).",
+            file=sys.stderr,
+        )
+        return 1
     if not raw:
         print("Clipboard is empty (or contains no text).", file=sys.stderr)
         return 1
