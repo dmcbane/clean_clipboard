@@ -1,3 +1,4 @@
+#! /usr/bin/env python3
 """Read clipboard, normalize/strip characters, copy first 1000 chars back.
 
 Works on Windows, macOS, and Linux (X11, Wayland, and WSL).
