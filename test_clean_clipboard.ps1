@@ -13,8 +13,8 @@ function Set-Clipboard { param($Value) }
 $script:passes = 0
 $script:failures = 0
 
-function Assert-Clean([string]$name, [string]$text, [string]$expected) {
-    $actual = Clean $text
+function Assert-Clean([string]$name, [string]$text, [string]$expected, [int]$MaxLength = 0) {
+    $actual = Clean $text $MaxLength
     if ($actual -ceq $expected) {
         $script:passes++
         Write-Host "ok - $name"
@@ -41,6 +41,14 @@ Assert-Clean 'ellipsis' "wait$([char]0x2026)" 'wait...'
 Assert-Clean 'nbsp becomes space' "a$([char]0x00A0)b" 'a b'
 Assert-Clean 'zero-width dropped' "a$([char]0x200B)b" 'ab'
 Assert-Clean 'disallowed chars stripped' "a$([char]0x263A)b$([char]0x20AC)c" 'abc'
+
+# Max length is opt-in; text is unlimited unless -MaxLength is passed
+$long = 'a' * 5000
+Assert-Clean 'no max length leaves text untruncated' $long $long
+Assert-Clean 'max length truncates' 'abcdef' 'abc' -MaxLength 3
+Assert-Clean 'max length longer than text is a no-op' 'abc' 'abc' -MaxLength 100
+# The tab expands to two spaces first, so 3 chars is 'a  ', not 'a b'.
+Assert-Clean 'max length applies after cleaning' "a`tb" 'a  ' -MaxLength 3
 
 Write-Host ''
 Write-Host "$script:passes passed, $script:failures failed"

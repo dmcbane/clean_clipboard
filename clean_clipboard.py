@@ -1,16 +1,18 @@
 #! /usr/bin/env python3
-"""Read clipboard, normalize/strip characters, copy first 1000 chars back.
+"""Read clipboard, normalize/strip characters, copy the result back.
 
+Length is unlimited unless --max-length is given.
 Works on Windows, macOS, and Linux (X11, Wayland, and WSL).
 """
 
+import argparse
 import os
 import platform
 import subprocess
 import sys
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 CONVERSIONS = {
     # Tab -> 2 spaces
@@ -43,8 +45,6 @@ ALLOWED = set(
     "0123456789"
     " \n()\"'-_.,/\\"
 )
-
-MAX_LEN = 1000
 
 GET_CB = (
     "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
@@ -113,13 +113,44 @@ def set_clipboard(text: str) -> None:
     )
 
 
-def clean(text: str) -> str:
+def clean(text: str, max_length: Optional[int] = None) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     converted = "".join(CONVERSIONS.get(ch, ch) for ch in text)
-    return "".join(ch for ch in converted if ch in ALLOWED)
+    kept = "".join(ch for ch in converted if ch in ALLOWED)
+    return kept if max_length is None else kept[:max_length]
 
 
-def main() -> int:
+def _positive_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not an integer")
+    if number < 1:
+        raise argparse.ArgumentTypeError(
+            f"must be 1 or greater, got {number}"
+        )
+    return number
+
+
+def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Clean the text on the clipboard and copy it back.",
+    )
+    parser.add_argument(
+        "-m",
+        "--max-length",
+        type=_positive_int,
+        metavar="N",
+        help="truncate the cleaned text to N characters (default: no limit)",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[list] = None) -> int:
+    args = parse_args(argv)
     try:
         raw = get_clipboard()
     except FileNotFoundError as e:
@@ -132,7 +163,7 @@ def main() -> int:
     if not raw:
         print("Clipboard is empty (or contains no text).", file=sys.stderr)
         return 1
-    cleaned = clean(raw)[:MAX_LEN]
+    cleaned = clean(raw, args.max_length)
     set_clipboard(cleaned)
     print(f"in: {len(raw)} chars  ->  out: {len(cleaned)} chars")
     return 0

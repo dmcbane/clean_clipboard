@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 - 2026-08-26
+
+- **Breaking:** the 1000-character limit is no longer applied by default.
+  The full cleaned text is copied back unless a maximum is requested.
+- Python: added `-m` / `--max-length N` (and `--version`). `clean()` now
+  takes an optional `max_length`; `main()` takes an optional `argv`.
+- PowerShell: added a `-MaxLength` parameter, validated to be 1 or
+  greater. `Clean` takes an optional max length, where 0 means no limit.
+- `Clean Clipboard.cmd` forwards its arguments to the PowerShell script.
+- To restore the old behavior, pass `--max-length 1000` / `-MaxLength 1000`.
+
 ## 0.2.1 - 2026-08-07
 
 - PowerShell version now matches the Python version's newline handling:

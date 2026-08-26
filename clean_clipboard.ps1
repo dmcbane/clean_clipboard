@@ -1,4 +1,14 @@
-# Read clipboard, normalize/strip characters, copy first 1000 chars back.
+# Read clipboard, normalize/strip characters, copy the result back.
+# Length is unlimited unless -MaxLength is given.
+
+[CmdletBinding()]
+param(
+    # Truncate the cleaned text to this many characters. Omit for no limit.
+    # Upper bound is [int]::MaxValue, spelled out because Windows PowerShell
+    # wants a literal constant in an attribute argument.
+    [ValidateRange(1, 2147483647)]
+    [int]$MaxLength
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -30,9 +40,7 @@ $allowed = [System.Collections.Generic.HashSet[char]]::new(
     [char[]]("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ()`"'-_.,/\`n")
 )
 
-$maxLen = 1000
-
-function Clean([string]$text) {
+function Clean([string]$text, [int]$maxLength = 0) {
     # CRLF / lone CR -> LF, matching clean_clipboard.py
     $text = $text.Replace("`r`n", "`n").Replace("`r", "`n")
     $sb = [System.Text.StringBuilder]::new($text.Length)
@@ -44,7 +52,12 @@ function Clean([string]$text) {
         }
         # else: drop
     }
-    return $sb.ToString()
+    $result = $sb.ToString()
+    # 0 is the unbound -MaxLength default and means "no limit"
+    if ($maxLength -gt 0 -and $result.Length -gt $maxLength) {
+        return $result.Substring(0, $maxLength)
+    }
+    return $result
 }
 
 # Dot-sourcing (as the tests do) loads Clean without touching the clipboard.
@@ -54,10 +67,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         Write-Error 'Clipboard is empty (or contains no text).'
         exit 1
     }
-    $cleaned = Clean $raw
-    if ($cleaned.Length -gt $maxLen) {
-        $cleaned = $cleaned.Substring(0, $maxLen)
-    }
+    $cleaned = Clean $raw $MaxLength
     Set-Clipboard -Value $cleaned
     "in: $($raw.Length) chars  ->  out: $($cleaned.Length) chars"
 }

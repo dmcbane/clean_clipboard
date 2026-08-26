@@ -1,5 +1,6 @@
 """Tests for clean_clipboard: text cleaning and platform clipboard dispatch."""
 
+import argparse
 import unittest
 from unittest import mock
 
@@ -44,6 +45,70 @@ class CleanExistingBehaviorTests(unittest.TestCase):
 
     def test_disallowed_chars_stripped(self):
         self.assertEqual(cc.clean("a☺b€c"), "abc")
+
+
+class CleanMaxLengthTests(unittest.TestCase):
+    def test_no_max_length_leaves_text_untruncated(self):
+        text = "a" * 5000
+        self.assertEqual(cc.clean(text), text)
+
+    def test_max_length_truncates(self):
+        self.assertEqual(cc.clean("abcdef", max_length=3), "abc")
+
+    def test_max_length_longer_than_text_is_a_no_op(self):
+        self.assertEqual(cc.clean("abc", max_length=100), "abc")
+
+    def test_max_length_applies_after_cleaning(self):
+        # The tab expands to two spaces first, so 3 chars is "a  ", not "a b".
+        self.assertEqual(cc.clean("a\tb", max_length=3), "a  ")
+
+
+class ArgumentParsingTests(unittest.TestCase):
+    def test_max_length_defaults_to_none(self):
+        self.assertIsNone(cc.parse_args([]).max_length)
+
+    def test_long_flag(self):
+        self.assertEqual(cc.parse_args(["--max-length", "50"]).max_length, 50)
+
+    def test_short_flag(self):
+        self.assertEqual(cc.parse_args(["-m", "50"]).max_length, 50)
+
+    def test_zero_is_rejected(self):
+        with mock.patch.object(cc.sys, "stderr"):
+            with self.assertRaises(SystemExit):
+                cc.parse_args(["-m", "0"])
+
+    def test_negative_is_rejected(self):
+        with mock.patch.object(cc.sys, "stderr"):
+            with self.assertRaises(SystemExit):
+                cc.parse_args(["-m", "-5"])
+
+    def test_non_integer_is_rejected(self):
+        with mock.patch.object(cc.sys, "stderr"):
+            with self.assertRaises(SystemExit):
+                cc.parse_args(["-m", "lots"])
+
+    def test_positive_int_error_names_the_bad_value(self):
+        with self.assertRaises(argparse.ArgumentTypeError) as ctx:
+            cc._positive_int("lots")
+        self.assertIn("lots", str(ctx.exception))
+
+
+class MainMaxLengthTests(unittest.TestCase):
+    def _run_main(self, argv, raw):
+        with mock.patch.object(cc, "get_clipboard", return_value=raw), \
+             mock.patch.object(cc, "set_clipboard") as set_cb, \
+             mock.patch.object(cc.sys, "stdout"):
+            self.assertEqual(cc.main(argv), 0)
+        return set_cb.call_args.args[0]
+
+    def test_default_writes_back_everything(self):
+        text = "b" * 5000
+        self.assertEqual(self._run_main([], text), text)
+
+    def test_flag_truncates_what_is_written_back(self):
+        self.assertEqual(self._run_main(["--max-length", "10"], "b" * 5000),
+                         "b" * 10)
 
 
 class ClipboardBackendTests(unittest.TestCase):
@@ -125,7 +190,7 @@ class MainErrorHandlingTests(unittest.TestCase):
         err = FileNotFoundError(2, "No such file or directory", "xclip")
         with mock.patch.object(cc, "get_clipboard", side_effect=err), \
              mock.patch.object(cc.sys, "stderr") as stderr:
-            self.assertEqual(cc.main(), 1)
+            self.assertEqual(cc.main([]), 1)
         written = "".join(
             c.args[0] for c in stderr.write.call_args_list if c.args
         )
@@ -134,7 +199,7 @@ class MainErrorHandlingTests(unittest.TestCase):
     def test_empty_clipboard_exits_nonzero(self):
         with mock.patch.object(cc, "get_clipboard", return_value=""), \
              mock.patch.object(cc.sys, "stderr"):
-            self.assertEqual(cc.main(), 1)
+            self.assertEqual(cc.main([]), 1)
 
 
 if __name__ == "__main__":
